@@ -56,17 +56,14 @@ class NeuralDatasetLoader:
         return sample
 
     def get_batch(self):
-        batch = []
-        batch_labels = []
-        for _ in range(self.batch_size):
-            sample = self.draw_sample()
-            if sample is None:
-                break  # Break if no more data
-            time_point, neuron_activity = sample
-            batch.append(time_point)
-            batch_labels.append(neuron_activity)
-        
-        if not batch or len(batch) != 10 or len(batch_labels) != 10:  # Check if batch is empty
-            return None, None  # Return None if no more data to process
+            if self.ptr + self.batch_size > len(self.stack):
+                return None, None  # No more data to form a full batch
 
-        return torch.FloatTensor(batch).unsqueeze(-1), torch.FloatTensor(batch_labels)
+            batch_data = self.stack[self.ptr:self.ptr + self.batch_size]
+            self.ptr += self.batch_size
+
+            if not batch_data.size:  # If batch_data is empty
+                return None, None
+
+            time_points, neuron_activities = batch_data[:, 0], batch_data[:, 1:]
+            return torch.FloatTensor(time_points).unsqueeze(-1), torch.FloatTensor(neuron_activities)
