@@ -3,16 +3,15 @@ import numpy as np
 import torch
 
 class NeuralDatasetLoader:
-    def __init__(self, batch_size=32):
+    def __init__(self):
         self.file_path = '/Users/jessegill/Desktop/nggp/nggp_lib/data/ST260_Day1.pkl'
-        self.batch_size = batch_size
+        self.batch_size = 10
         self.data = self.load_data()
         self.mode = 'spikes'
         self.trial_length = 316
         self.stack = self.generate_datastack()
         np.random.shuffle(self.stack)
         self.ptr = 0
-
 
     def load_data(self):
         with open(self.file_path, 'rb') as file:
@@ -26,36 +25,48 @@ class NeuralDatasetLoader:
         for key in self.data:
             self.data[key] = torch.tensor(self.data[key], dtype=torch.float32 if key == 'signals' else torch.int32)
 
-    def generate_batches(self):
-        total_samples = len(self.data['signals'])
-        for i in range(0, total_samples, self.batch_size):
-            batch_indices = slice(i, min(i + self.batch_size, total_samples))
-            batch = {key: self.data[key][batch_indices] for key in self.data}
-            yield batch
-    
-
-
     def generate_datastack(self):
         labels = self.data[self.mode][0][:self.trial_length]
         time_points = self.data['time'][:self.trial_length]
-        combined = np.column_stack((time_points,labels))
+        combined = np.column_stack((time_points, labels))
         return combined
 
+    def get_batch(self):
+        batch_size = min(self.batch_size, len(self.stack) - self.ptr)
+        if batch_size <= 0:
+            return None, None
 
-        
-    def draw_sample(self):
-        if self.ptr == self.trial_length-1:
+        batch_data = self.stack[self.ptr:self.ptr + batch_size]
+        self.ptr += batch_size
+
+        # Reset pointer if end of data is reached
+        if self.ptr >= len(self.stack):
             self.ptr = 0
+
+        # Splitting the data and labels
+        time_points, neuron_activities = batch_data[:, 0], batch_data[:, 1:]
+        
+        return torch.FloatTensor(time_points).unsqueeze(-1), torch.FloatTensor(neuron_activities)
+
+    def draw_sample(self):
+        if self.ptr >= 280:
+            return None  # Signal that all data has been drawn
+        sample = tuple(self.stack[self.ptr])
         self.ptr += 1
-        sample = tuple(self.stack[self.ptr-1])
-        # Assuming the sample contains continuous data
         return sample
 
     def get_batch(self):
         batch = []
         batch_labels = []
-        for i in range(len(self.stack)):
-            time_point,neuron_activity = self.draw_sample()
+        for _ in range(self.batch_size):
+            sample = self.draw_sample()
+            if sample is None:
+                break  # Break if no more data
+            time_point, neuron_activity = sample
             batch.append(time_point)
             batch_labels.append(neuron_activity)
-        return torch.FloatTensor(batch),torch.FloatTensor(batch_labels)
+        
+        if not batch or len(batch) != 10 or len(batch_labels) != 10:  # Check if batch is empty
+            return None, None  # Return None if no more data to process
+
+        return torch.FloatTensor(batch).unsqueeze(-1), torch.FloatTensor(batch_labels)

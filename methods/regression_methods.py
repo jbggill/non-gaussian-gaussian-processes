@@ -111,9 +111,9 @@ class NGGP(nn.Module):
             total_size = 316
             
             if train_x is None: 
-                train_x = torch.ones(1, total_size).to(self.device)  # 1 sample, first 100 time points
+                train_x = torch.ones(10,40).to(self.device)  # 1 sample, first 100 time points
             if train_y is None: 
-                train_y = torch.ones(1, total_size).to(self.device)  # 1 sample, last 30 time points
+                train_y = torch.ones(10).to(self.device)  # 1 sample, last 30 time points
 
 
                 
@@ -190,10 +190,7 @@ class NGGP(nn.Module):
             else:
                 batch = torch.from_numpy(batch)
                 batch_labels = torch.from_numpy(batch_labels)
-            print(batch)
-            print('_'*100)
-            print(batch_labels)
-            print('+'*100)
+
             dataloader = zip(batch, batch_labels)
             
 
@@ -225,37 +222,39 @@ class NGGP(nn.Module):
         # need to generate dataloader for my dataset
             
 
-
         elif self.dataset == "neural":
-            batch, batch_labels = self.neural_loader.get_batch()
-            batch_labels = np.transpose(batch_labels)
-            print(batch)
-            print('_'*100)
-            print(batch_labels)
-            print('+'*100)
-            dataloader = zip(torch.tensor(batch), batch_labels)
+            all_batches = []
+            all_batch_labels = []
+            while True:  # or some condition to end the loop
+                batch, batch_labels = self.neural_loader.get_batch()
+                if batch is None or batch_labels is None:
+                    break  # Exit loop if there's no more data
 
-    
+
+                
+                all_batches.append(batch)
+                all_batch_labels.append(batch_labels)
+
+            # Now, all_batches and all_batch_labels are lists of tensors, each representing a batch
+            # Example: iterate through each batch
+            dataloader = zip(all_batches,all_batch_labels)
 
 
         else:
             raise ValueError("Unknown dataset {}".format(self.dataset))
-        print(dataloader)
+
         # iterate through each input label pair in batch and performance SGD
         # I don't think I need to do anything here
         for _, (inputs, labels) in enumerate(dataloader):
-            
             inputs, labels = inputs.to(self.device), labels.to(self.device)
+
             optimizer.zero_grad()
-            print(labels)
-            print('-'*100)
-            print(inputs)
-            break
+
+           # break
             z = self.feature_extractor(inputs)
             if self.add_noise:
                 labels = labels + torch.normal(0, 0.1, size=labels.shape).to(labels)
-            if self.is_flow:
-                
+            if self.is_flow:               
                 delta_log_py, labels, y = self.apply_flow(labels, z)
             else:
                 y = labels

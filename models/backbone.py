@@ -120,7 +120,6 @@ class MLP2(nn.Module):
                                    nn.Linear(hidden_dim, output_dim), nn.ReLU())
 
     def forward(self, x):
-        print(x)
         return self.model(x)
 
 
