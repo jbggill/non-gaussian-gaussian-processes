@@ -7,6 +7,8 @@ from gpytorch.priors import UniformPrior
 from data.data_generator import SinusoidalDataGenerator, Nasdaq100padding
 import os
 from data.qmul_loader import get_batch, train_people, test_people
+# import neural loader
+from data.neural_loader import NeuralDatasetLoader
 from models.kernels import NNKernel, MultiNNKernel
 from data.objects_pose_loader import get_dataset, get_objects_batch
 from training.utils import prepare_for_plots, plot_histograms
@@ -71,6 +73,9 @@ class NGGP(nn.Module):
         if self.dataset == 'objects':
             self.x_objects_train, self.y_objects_train = get_dataset(train=True, prefix=self.config.data_dir["objects"])
             self.x_objects_test, self.y_objects_test = get_dataset(train=False, prefix=self.config.data_dir["objects"])
+        if self.dataset == 'neural':
+            self.neural_loader = NeuralDatasetLoader()
+            
 
     def get_model_likelihood_mll(self, train_x=None, train_y=None):
         if self.dataset == 'QMUL':
@@ -95,11 +100,28 @@ class NGGP(nn.Module):
             else:
                 if train_x is None: train_x = torch.ones(10, self.feature_extractor.output_dim).to(self.device)
                 if train_y is None: train_y = torch.ones(10, self.num_tasks).to(self.device)
+
+        #
+        # Need to add conditional for neural data, should really just define train_x and train_y dimensions then nothing needs to be changed
+        #
+            
+        elif self.dataset == "neural":
+            train_segment = 220  # Number of time points for training
+            predict_segment = 96  # Number of time points to predict
+            total_size = 316
+            
+            if train_x is None: 
+                train_x = torch.ones(1, total_size).to(self.device)  # 1 sample, first 100 time points
+            if train_y is None: 
+                train_y = torch.ones(1, total_size).to(self.device)  # 1 sample, last 30 time points
+
+
+                
         else:
             raise ValueError("Unknown dataset {}".format(self.dataset))
 
         if self.num_tasks == 1:
-
+            # adds some noise for the nasdaq data set and can be ignored
             if self.dataset == "nasdaq" and self.device == "cpu":
                 noise_prior = UniformPrior(0, 1)
                 MIN_INFERRED_NOISE_LEVEL = 1e-8
@@ -132,7 +154,7 @@ class NGGP(nn.Module):
     def set_forward_loss(self, x):
         pass
 
-
+    # looks like nothing needs to be changed here either, just calls the train loop but only after some noise is added to the nasdaq dataset
     def train_loop(self, epoch, optimizer, params, results_logger):
         if self.dataset == "nasdaq":
             with gpytorch.settings.cholesky_jitter(1e-4, 1e-5):
@@ -140,14 +162,19 @@ class NGGP(nn.Module):
         else:
             self._train_loop(epoch, optimizer, params, results_logger)
 
+
+    # trouble area
     def _train_loop(self, epoch, optimizer, params, results_logger):
 
+        # put the model, feature extractor and likelihood into "training mode"
         self.model.train()
         self.feature_extractor.train()
         self.likelihood.train()
         if self.is_flow:
             self.cnf.train()
 
+        # end product: zip of batch and batch_labels
+        # generates more data for the sines dataset
         if self.dataset == "sines":
             batch, batch_labels, amp, phase = SinusoidalDataGenerator(params.update_batch_size * 2,
                                                                       params.meta_batch_size,
@@ -163,7 +190,14 @@ class NGGP(nn.Module):
             else:
                 batch = torch.from_numpy(batch)
                 batch_labels = torch.from_numpy(batch_labels)
+            print(batch)
+            print('_'*100)
+            print(batch_labels)
+            print('+'*100)
             dataloader = zip(batch, batch_labels)
+            
+
+        # uses some custom genrator
         elif self.dataset == "nasdaq" or self.dataset == "eeg":
             nasdaq100padding = Nasdaq100padding(directory=self.config.data_dir[self.dataset], normalize=True,
                                                 partition="train", window=params.update_batch_size * 2,
@@ -174,6 +208,8 @@ class NGGP(nn.Module):
             batch = batch.reshape(params.update_batch_size * 2, params.meta_batch_size * 2, 1)
             batch_labels = batch_labels[:, :, -1].float()
             dataloader=zip(batch, batch_labels)
+
+        # uses some custom get batch function, probably closest to what I would need
         elif self.dataset == "QMUL":
             batch, batch_labels = get_batch(train_people, data_dir=self.config.data_dir['qmul'])
             dataloader = zip(batch, batch_labels)
@@ -185,13 +221,36 @@ class NGGP(nn.Module):
                                                     params.num_tasks)
             batch = torch.reshape(batch, (batch.shape[0], batch.shape[1], 1, 128, 128))
             dataloader = zip(batch, batch_labels)
+
+        # need to generate dataloader for my dataset
+            
+
+
+        elif self.dataset == "neural":
+            batch, batch_labels = self.neural_loader.get_batch()
+            batch_labels = np.transpose(batch_labels)
+            print(batch)
+            print('_'*100)
+            print(batch_labels)
+            print('+'*100)
+            dataloader = zip(torch.tensor(batch), batch_labels)
+
+    
+
+
         else:
             raise ValueError("Unknown dataset {}".format(self.dataset))
-
-
+        print(dataloader)
+        # iterate through each input label pair in batch and performance SGD
+        # I don't think I need to do anything here
         for _, (inputs, labels) in enumerate(dataloader):
+            
             inputs, labels = inputs.to(self.device), labels.to(self.device)
             optimizer.zero_grad()
+            print(labels)
+            print('-'*100)
+            print(inputs)
+            break
             z = self.feature_extractor(inputs)
             if self.add_noise:
                 labels = labels + torch.normal(0, 0.1, size=labels.shape).to(labels)
@@ -221,6 +280,7 @@ class NGGP(nn.Module):
                 results_logger.log("noise", self.model.likelihood.noise.item())
         return loss.item()
 
+    # compute the mse between predicted and actual labels for the GP model
     def compute_mse(self, labels, predictions, z):
         if self.is_flow:
             sample_fn, _ = get_transforms(self.cnf, self.use_conditional)
@@ -238,6 +298,7 @@ class NGGP(nn.Module):
             new_means = None
         return mse, new_means
 
+    # generates context for conditional models??
     def get_context(self, z):
         if self.context_type == 'nn':
             if self.num_tasks == 1:
@@ -267,7 +328,11 @@ class NGGP(nn.Module):
         y = y.squeeze()
         return delta_log_py, labels, y
 
+
+    # the testing part. This is made for meta-learning so it would have to be adapted
     def test_loop(self, n_support, params=None, save_dir=None):
+
+        # each creates a support and query dataset for 0
         if self.dataset == "sines":
             x_all, x_support, y_all, y_support = self.get_support_query_sines(n_support, params)
             x_test, y_test = x_all, y_all

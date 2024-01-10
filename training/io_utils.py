@@ -38,7 +38,7 @@ def parse_args_regression():
     parser.add_argument('--seed', default=0, type=int, help='Seed for Numpy and pyTorch. Default: 0 (None)')
     parser.add_argument('--model', default='Conv3', choices=["Conv3", "MLP2", "Encoder"], help='model: Conv{3} / MLP{2} / Encoder.  Use Encoder for <objects> dataset, use MLP2 for sines, and Conv3 for QMUL.')
     parser.add_argument('--method', default='NGGP', choices=["DKT","NGGP"], help="which method to use: the standard Deep Kernel Transfer or the Non-Gaussian Gaussian Processes")
-    parser.add_argument('--dataset', default='QMUL', choices=["QMUL","sines","nasdaq", "eeg", "objects"], help="which dataset to use. Note that the in-code generating support is available only for sines. For other datasets download check the 'filelist' folder")
+    parser.add_argument('--dataset', default='QMUL', choices=["QMUL","sines","nasdaq", "eeg", "objects", "neural"], help="which dataset to use. Note that the in-code generating support is available only for sines. For other datasets download check the 'filelist' folder")
     parser.add_argument('--update_batch_size', default=5, type=int,
                         help='Number of examples used for inner gradient update (K for K-shot learning).')
     parser.add_argument('--meta_batch_size', default=5, type=int, help='Number of tasks sampled per meta-update')
