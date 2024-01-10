@@ -22,8 +22,8 @@ def main():
 
     results_logger = ResultsLogger(params)
 
-    # Cuda
-    device = params.device
+
+    device = 'cpu'
     logging.info('Device: {}'.format(device))
 
     bb = setup_backbone(device, params)

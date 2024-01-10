@@ -19,7 +19,7 @@ def prepare_for_plots(pred, y_true, sample_fn, context, new_means):
     true_y = []
     flow_y = []
     gauss_y = []
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     for k in range(pred.mean.shape[0]):
         sample = torch.normal(pred.mean[k], pred.stddev[k], size=(1, 10000)).reshape(10000, 1)
         samples.append(sample)

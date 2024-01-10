@@ -152,7 +152,7 @@ class ParallelCNFLayers(layers.SequentialFlow):
 
 
 if __name__ == "__main__":
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     cnfs = MultiscaleParallelCNF((13, 3, 32, 32)).to(device)
     t = torch.randn(13, 3, 32, 32).to(device)
     out = cnfs(t, logpx=None)
