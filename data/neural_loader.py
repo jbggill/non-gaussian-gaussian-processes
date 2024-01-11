@@ -7,9 +7,10 @@ class NeuralDatasetLoader:
         self.file_path = '/Users/jessegill/Desktop/nggp/nggp_lib/data/ST260_Day1.pkl'
         self.batch_size = 10
         self.data = self.load_data()
-        self.mode = 'spikes'
+        self.mode = 'signals'
         self.trial_length = 316
-        self.stack = self.generate_datastack()
+        self.training_length = 280
+        self.stack = self.generate_datastack()[:self.training_length]
         np.random.shuffle(self.stack)
         self.ptr = 0
 
@@ -31,32 +32,19 @@ class NeuralDatasetLoader:
         combined = np.column_stack((time_points, labels))
         return combined
 
-    def get_batch(self):
-        batch_size = min(self.batch_size, len(self.stack) - self.ptr)
-        if batch_size <= 0:
-            return None, None
-
-        batch_data = self.stack[self.ptr:self.ptr + batch_size]
-        self.ptr += batch_size
-
-        # Reset pointer if end of data is reached
-        if self.ptr >= len(self.stack):
-            self.ptr = 0
-
-        # Splitting the data and labels
-        time_points, neuron_activities = batch_data[:, 0], batch_data[:, 1:]
-        
-        return torch.FloatTensor(time_points).unsqueeze(-1), torch.FloatTensor(neuron_activities)
+    
 
     def draw_sample(self):
         if self.ptr >= 280:
             return None  # Signal that all data has been drawn
         sample = tuple(self.stack[self.ptr])
         self.ptr += 1
+        print('boo')
         return sample
 
     def get_batch(self):
             if self.ptr + self.batch_size > len(self.stack):
+                self.ptr = len(self.stack) - self.ptr
                 return None, None  # No more data to form a full batch
 
             batch_data = self.stack[self.ptr:self.ptr + self.batch_size]

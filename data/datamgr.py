@@ -6,8 +6,8 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 
-import data.additional_transforms as add_transforms
-from data.dataset import SimpleDataset, SetDataset, EpisodicBatchSampler
+from . import additional_transforms as add_transforms
+from .dataset import SimpleDataset, SetDataset, EpisodicBatchSampler
 
 
 def _init_fn(worker_id):

@@ -2,8 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import CNF_lib.layers as layers
-from CNF_lib.layers.odefunc import ODEnet
+from . import layers as layers
+from .layers.odefunc import ODEnet
 
 
 class ODENVP(nn.Module):

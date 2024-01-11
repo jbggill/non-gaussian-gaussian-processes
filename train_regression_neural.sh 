@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Define the array of kernel types
+kernels=("rbf", "spectral", "bncossim", "matern", "poli1", "poli2", "cossim", "nn")
+
+# Loop over the kernel types and run the python command for each
+for kernel in "${kernels[@]}"
+do
+    echo "Running regression with kernel type: $kernel"
+    python run_regression.py \
+    --dataset neural \
+    --model=MLP2 \
+    --method="NGGP" \
+    --output_dim=40 \
+    --seed=1 \
+    --save_dir "./save/nggp_${kernel}_neural" \
+    --kernel_type "$kernel" \
+    --stop_epoch 50000 \
+    --all_lr 1e-3 \
+    --use_conditional True \
+    --context_type backbone
+done

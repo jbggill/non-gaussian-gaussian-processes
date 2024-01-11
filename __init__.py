@@ -11,7 +11,6 @@ from .data.additional_transforms import *
 from .data.data_generator import *
 from .data.datamgr import *
 from .data.neural_loader import *
-
 from .data.qmul_loader import *
 from .data.objects_pose_loader import *
 from .data.feature_loader import *
@@ -23,3 +22,4 @@ from .reporting.loggers import *
 from .reporting.save_features import *
 from .training.configs import *
 from .training.io_utils import *
+from .data.data_generator import *

@@ -28,7 +28,7 @@ class Config:
 
         ## ST260_Day1 Neuron 1, ¡ trial 1 = 316 !
         elif args.dataset == "neural":
-            self.nn_config["input_dim"] = 316
+            self.nn_config["input_dim"] = 40
 
         else:
             raise ValueError("input dim for nn kernel not known for value {}".format(args.dataset))

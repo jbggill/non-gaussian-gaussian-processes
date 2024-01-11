@@ -4,14 +4,14 @@ import torch.nn as nn
 import gpytorch
 from gpytorch.constraints import GreaterThan
 from gpytorch.priors import UniformPrior
-from data.data_generator import SinusoidalDataGenerator, Nasdaq100padding
+from ..data.data_generator import SinusoidalDataGenerator, Nasdaq100padding
 import os
-from data.qmul_loader import get_batch, train_people, test_people
+from ..data.qmul_loader import get_batch, train_people, test_people
 # import neural loader
-from data.neural_loader import NeuralDatasetLoader
-from models.kernels import NNKernel, MultiNNKernel
-from data.objects_pose_loader import get_dataset, get_objects_batch
-from training.utils import prepare_for_plots, plot_histograms
+from ..data.neural_loader import NeuralDatasetLoader
+from ..models.kernels import NNKernel, MultiNNKernel
+from ..data.objects_pose_loader import get_dataset, get_objects_batch
+from ..training.utils import prepare_for_plots, plot_histograms
 
 
 def get_transforms(model, use_context):
@@ -165,7 +165,6 @@ class NGGP(nn.Module):
 
     # trouble area
     def _train_loop(self, epoch, optimizer, params, results_logger):
-
         # put the model, feature extractor and likelihood into "training mode"
         self.model.train()
         self.feature_extractor.train()
@@ -228,6 +227,7 @@ class NGGP(nn.Module):
             while True:  # or some condition to end the loop
                 batch, batch_labels = self.neural_loader.get_batch()
                 if batch is None or batch_labels is None:
+                    print('/')
                     break  # Exit loop if there's no more data
 
 
@@ -242,6 +242,8 @@ class NGGP(nn.Module):
 
         else:
             raise ValueError("Unknown dataset {}".format(self.dataset))
+        
+        
 
         # iterate through each input label pair in batch and performance SGD
         # I don't think I need to do anything here
