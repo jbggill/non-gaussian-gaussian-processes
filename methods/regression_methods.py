@@ -4,14 +4,14 @@ import torch.nn as nn
 import gpytorch
 from gpytorch.constraints import GreaterThan
 from gpytorch.priors import UniformPrior
-from ..data.data_generator import SinusoidalDataGenerator, Nasdaq100padding
+from data.data_generator import SinusoidalDataGenerator, Nasdaq100padding
 import os
-from ..data.qmul_loader import get_batch, train_people, test_people
+#from data.qmul_loader import get_batch, train_people, test_people
 # import neural loader
-from ..data.neural_loader import NeuralDatasetLoader
-from ..models.kernels import NNKernel, MultiNNKernel
-from ..data.objects_pose_loader import get_dataset, get_objects_batch
-from ..training.utils import prepare_for_plots, plot_histograms
+from data.neural_loader import NeuralDatasetLoader
+from models.kernels import NNKernel, MultiNNKernel
+#from data.objects_pose_loader import get_dataset, get_objects_batch
+from training.utils import prepare_for_plots, plot_histograms
 
 
 def get_transforms(model, use_context):
@@ -69,6 +69,7 @@ class NGGP(nn.Module):
         #plotting
         self.max_test_plots=5
         self.i_plots=0
+        print("Device type:", type(device))
 
         if self.dataset == 'objects':
             self.x_objects_train, self.y_objects_train = get_dataset(train=True, prefix=self.config.data_dir["objects"])
@@ -106,10 +107,12 @@ class NGGP(nn.Module):
         #
             
         elif self.dataset == "neural":
+
             train_segment = 220  # Number of time points for training
             predict_segment = 96  # Number of time points to predict
             total_size = 316
-            
+            print("Device type:", type(self.device))
+
             if train_x is None: 
                 train_x = torch.ones(10,40).to(self.device)  # 1 sample, first 100 time points
             if train_y is None: 
@@ -227,7 +230,7 @@ class NGGP(nn.Module):
             while True:  # or some condition to end the loop
                 batch, batch_labels = self.neural_loader.get_batch()
                 if batch is None or batch_labels is None:
-                    print('/')
+                    print('.')
                     break  # Exit loop if there's no more data
 
 
@@ -283,6 +286,7 @@ class NGGP(nn.Module):
 
     # compute the mse between predicted and actual labels for the GP model
     def compute_mse(self, labels, predictions, z):
+
         if self.is_flow:
             sample_fn, _ = get_transforms(self.cnf, self.use_conditional)
             if self.num_tasks == 1:

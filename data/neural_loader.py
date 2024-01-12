@@ -8,6 +8,8 @@ class NeuralDatasetLoader:
         self.batch_size = 10
         self.data = self.load_data()
         self.mode = 'signals'
+
+        self.preprocess_data()
         self.trial_length = 316
         self.training_length = 280
         self.stack = self.generate_datastack()[:self.training_length]
@@ -21,13 +23,13 @@ class NeuralDatasetLoader:
 
     def preprocess_data(self):
         # Normalize the 'signals' field
-        self.data['signals'] = (self.data['signals'] - np.mean(self.data['signals'], axis=0)) / np.std(self.data['signals'], axis=0)
+        self.data[self.mode] = (self.data[self.mode] - np.mean(self.data[self.mode], axis=0)) / np.std(self.data[self.mode], axis=0)
         # Convert data to torch tensors
         for key in self.data:
-            self.data[key] = torch.tensor(self.data[key], dtype=torch.float32 if key == 'signals' else torch.int32)
+            self.data[key] = torch.tensor(self.data[key], dtype=torch.float32 if key == self.mode else torch.int32)
 
     def generate_datastack(self):
-        labels = self.data[self.mode][0][:self.trial_length]
+        labels = self.data[self.mode][7][:self.trial_length]
         time_points = self.data['time'][:self.trial_length]
         combined = np.column_stack((time_points, labels))
         return combined
@@ -39,7 +41,6 @@ class NeuralDatasetLoader:
             return None  # Signal that all data has been drawn
         sample = tuple(self.stack[self.ptr])
         self.ptr += 1
-        print('boo')
         return sample
 
     def get_batch(self):

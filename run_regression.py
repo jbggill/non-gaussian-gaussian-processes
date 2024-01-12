@@ -16,6 +16,8 @@ from training.utils import set_cnf_options
 
 def main():
     params = parse_args_regression()
+    print(type(params))
+
     setup_seed(params)
     config = Config(params)
     checkpoint_dir, save_path = setup_checkpoint_dir(params)
@@ -25,7 +27,7 @@ def main():
 
     device = 'cpu'
     logging.info('Device: {}'.format(device))
-
+    print('device: ', device)
     bb = setup_backbone(device, params)
     model = setup_model(bb, config, device, params)
     optimizer = setup_optimizer(model, params)
@@ -87,6 +89,7 @@ def setup_checkpoint_dir(params):
     checkpoint_dir = '%s/checkpoints/%s/' % (params.save_dir, params.dataset)
     os.makedirs(checkpoint_dir, exist_ok=True)
     save_path = '%s/checkpoints/%s/%s_%s_model.th' % (params.save_dir, params.dataset, params.model, params.method)
+    print(save_path)
     return checkpoint_dir, save_path
 
 
