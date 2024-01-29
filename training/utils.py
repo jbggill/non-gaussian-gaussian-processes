@@ -1,7 +1,8 @@
 import math
 import os
 from math import pi
-
+import sys
+sys.path.append('/Users/jessegill/Desktop/nggp/nggp_lib')
 import matplotlib.pyplot as plt
 import numpy as np
 import six

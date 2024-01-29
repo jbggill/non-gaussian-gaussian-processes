@@ -7,7 +7,7 @@ from torch.autograd import Variable
 from data.datamgr import SimpleDataManager
 from models import backbone
 from training import configs
-from training.io_utils import model_dict, parse_args, get_resume_file, get_best_file, get_assigned_file
+from training.io_utils import model_dict, parse_args_regression, get_resume_file, get_best_file, get_assigned_file
 
 
 def save_features(model, data_loader, outfile):
@@ -35,7 +35,7 @@ def save_features(model, data_loader, outfile):
 
 
 if __name__ == '__main__':
-    params = parse_args('save_features')
+    params = parse_args_regression('save_features')
     assert params.method != 'maml' and params.method != 'maml_approx', 'maml do not support save_feature and run'
 
     if 'Conv' in params.model:

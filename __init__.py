@@ -23,3 +23,4 @@ from .reporting.save_features import *
 from .training.configs import *
 from .training.io_utils import *
 from .data.data_generator import *
+from .methods.adapted_regression_methods import *

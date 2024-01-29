@@ -7,7 +7,8 @@ class NeuralDatasetLoader:
         self.file_path = '/Users/jessegill/Desktop/nggp/nggp_lib/data/ST260_Day1.pkl'
         self.batch_size = 10
         self.data = self.load_data()
-        self.mode = 'signals'
+        self.mode = 'spikes'
+        self.fa = True
 
         self.preprocess_data()
         self.trial_length = 316
@@ -26,7 +27,7 @@ class NeuralDatasetLoader:
         self.data[self.mode] = (self.data[self.mode] - np.mean(self.data[self.mode], axis=0)) / np.std(self.data[self.mode], axis=0)
         # Convert data to torch tensors
         for key in self.data:
-            self.data[key] = torch.tensor(self.data[key], dtype=torch.float32 if key == self.mode else torch.int32)
+            self.data[key] = torch.tensor(self.data[key], dtype=torch.float32 if key == self.mode or 'time' else torch.int32)
 
     def generate_datastack(self):
         labels = self.data[self.mode][7][:self.trial_length]
@@ -56,3 +57,7 @@ class NeuralDatasetLoader:
 
             time_points, neuron_activities = batch_data[:, 0], batch_data[:, 1:]
             return torch.FloatTensor(time_points).unsqueeze(-1), torch.FloatTensor(neuron_activities)
+    def get_test_set(self):
+        return self.stack[280:]
+    
+    

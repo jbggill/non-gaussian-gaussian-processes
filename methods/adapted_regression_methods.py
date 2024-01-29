@@ -11,7 +11,7 @@ import os
 from nggp_lib.data.neural_loader import NeuralDatasetLoader
 from nggp_lib.models.kernels import NNKernel, MultiNNKernel
 #from data.objects_pose_loader import get_dataset, get_objects_batch
-from training.utils import prepare_for_plots, plot_histograms
+from nggp_lib.training.utils import prepare_for_plots, plot_histograms
 
 
 def get_transforms(model, use_context):
@@ -54,7 +54,6 @@ class NGGP(nn.Module):
         self.device = device
         self.num_tasks = num_tasks
         self.config = config
-        self.dataset = dataset
         self.cnf = cnf
         self.use_conditional = use_conditional
         self.multi_type = multi_type
@@ -64,76 +63,28 @@ class NGGP(nn.Module):
         else:
             self.is_flow = False
         self.add_noise = add_noise
-        self.get_model_likelihood_mll()  # Init model, likelihood, and mll
+
 
         #plotting
         self.max_test_plots=5
         self.i_plots=0
 
-        if self.dataset == 'objects':
-            self.x_objects_train, self.y_objects_train = get_dataset(train=True, prefix=self.config.data_dir["objects"])
-            self.x_objects_test, self.y_objects_test = get_dataset(train=False, prefix=self.config.data_dir["objects"])
-        if self.dataset == 'neural':
-            self.neural_loader = NeuralDatasetLoader()
-            
+        self.train_x = None
+        self.train_y = None
+    
+    def set_training_data(self, train_x, train_y):
+        self.train_x = train_x.to(self.device)
+        self.train_y = train_y.to(self.device)
+        self.get_model_likelihood_mll(train_x=self.train_x, train_y=self.train_y)
 
     def get_model_likelihood_mll(self, train_x=None, train_y=None):
-        if self.dataset == 'QMUL':
-            if train_x is None: train_x = torch.ones(19, 2916).to(self.device)
-            if train_y is None: train_y = torch.ones(19).to(self.device)
-        elif self.dataset == "sines":
-            if self.num_tasks == 1:
-                if train_x is None: train_x = torch.ones(10, self.feature_extractor.output_dim).to(self.device)
-                if train_y is None: train_y = torch.ones(10).to(self.device)
-            else:
-                if train_x is None: train_x = torch.ones(10, self.feature_extractor.output_dim).to(self.device)
-                if train_y is None: train_y = torch.ones(10, self.num_tasks).to(self.device)
-        elif self.dataset == 'objects':
-            # TODO - change sizes
-            if train_x is None: train_x = torch.ones(30, 64).to(self.device)
-            # if train_x is None: train_x = torch.ones(30, 3136).to(self.device)
-            if train_y is None: train_y = torch.ones(30).to(self.device)
-        elif self.dataset == "nasdaq" or self.dataset == "eeg":
-            if self.num_tasks == 1:
-                if train_x is None: train_x = torch.ones(10, self.feature_extractor.output_dim).to(self.device)
-                if train_y is None: train_y = torch.ones(10).to(self.device)
-            else:
-                if train_x is None: train_x = torch.ones(10, self.feature_extractor.output_dim).to(self.device)
-                if train_y is None: train_y = torch.ones(10, self.num_tasks).to(self.device)
-
-        #
-        # Need to add conditional for neural data, should really just define train_x and train_y dimensions then nothing needs to be changed
-        #
-            
-        elif self.dataset == "neural":
-
-            train_segment = 220  # Number of time points for training
-            predict_segment = 96  # Number of time points to predict
-            total_size = 316
-
-            if train_x is None: 
-                train_x = torch.ones(10,40).to(self.device)  # 1 sample, first 100 time points
-            if train_y is None: 
-                train_y = torch.ones(10).to(self.device)  # 1 sample, last 30 time points
-
-
-                
-        else:
-            raise ValueError("Unknown dataset {}".format(self.dataset))
+        if train_x is None or train_y is None:
+            raise ValueError("Training data must be provided")
 
         if self.num_tasks == 1:
             # adds some noise for the nasdaq data set and can be ignored
-            if self.dataset == "nasdaq" and self.device == "cpu":
-                noise_prior = UniformPrior(0, 1)
-                MIN_INFERRED_NOISE_LEVEL = 1e-8
-                likelihood = gpytorch.likelihoods.GaussianLikelihood(
-                    noise_prior=noise_prior,
-                    noise_constraint=GreaterThan(
-                        MIN_INFERRED_NOISE_LEVEL
-                    ).to(self.device),
-                ).to(self.device)
-            else:
-                likelihood = gpytorch.likelihoods.GaussianLikelihood()
+            
+            likelihood = gpytorch.likelihoods.GaussianLikelihood()
             model = ExactGPLayer(dataset=self.dataset, config=self.config, train_x=train_x,
                                  train_y=train_y, likelihood=likelihood, kernel=self.config.kernel_type)
         else:
@@ -156,11 +107,7 @@ class NGGP(nn.Module):
 
     # looks like nothing needs to be changed here either, just calls the train loop but only after some noise is added to the nasdaq dataset
     def train_loop(self, epoch, optimizer, params, results_logger):
-        if self.dataset == "nasdaq":
-            with gpytorch.settings.cholesky_jitter(1e-4, 1e-5):
-                self._train_loop(epoch, optimizer, params, results_logger)
-        else:
-            self._train_loop(epoch, optimizer, params, results_logger)
+        self._train_loop(epoch, optimizer, params, results_logger)
 
 
     # trouble area
