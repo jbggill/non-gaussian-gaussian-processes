@@ -1,9 +1,12 @@
 import numpy as np
 import torch
+from torch.utils.data import TensorDataset, DataLoader
+
 import torch.nn as nn
 import gpytorch
 from gpytorch.constraints import GreaterThan
 from gpytorch.priors import UniformPrior
+import data
 from nggp_lib.data.data_generator import SinusoidalDataGenerator, Nasdaq100padding
 import os
 #from data.qmul_loader import get_batch, train_people, test_people
@@ -43,15 +46,16 @@ def get_transforms(model, use_context):
     return sample_fn, density_fn
 
 
-class NGGP(nn.Module):
-    def __init__(self, backbone, device, num_tasks=1, config=None, dataset='QMUL', cnf=None, use_conditional=False,
+class ANGGP(nn.Module):
+    def __init__(self,backbone, device, num_tasks=1, config=None, dataset='QMUL', cnf=None, use_conditional=False, batch_size= 50,
                  add_noise=False, context_type='nn', multi_type=2):
 
-        super(NGGP, self).__init__()
+        super(ANGGP, self).__init__()
 
         ## GP parameters
+        
         self.feature_extractor = backbone
-        self.device = device
+        self.device = torch.device(device)
         self.num_tasks = num_tasks
         self.config = config
         self.cnf = cnf
@@ -69,6 +73,7 @@ class NGGP(nn.Module):
         self.max_test_plots=5
         self.i_plots=0
 
+        self.batch_size = batch_size
         self.train_x = None
         self.train_y = None
     
@@ -76,6 +81,7 @@ class NGGP(nn.Module):
         self.train_x = train_x.to(self.device)
         self.train_y = train_y.to(self.device)
         self.get_model_likelihood_mll(train_x=self.train_x, train_y=self.train_y)
+        print('Training data set')
 
     def get_model_likelihood_mll(self, train_x=None, train_y=None):
         if train_x is None or train_y is None:
@@ -85,11 +91,13 @@ class NGGP(nn.Module):
             # adds some noise for the nasdaq data set and can be ignored
             
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
-            model = ExactGPLayer(dataset=self.dataset, config=self.config, train_x=train_x,
-                                 train_y=train_y, likelihood=likelihood, kernel=self.config.kernel_type)
+            model = ExactGPLayer( config=self.config, train_x=train_x,
+                                train_y=train_y, likelihood=likelihood, kernel=self.config.kernel_type)
+
+                                 #train_y=train_y[:50], likelihood=likelihood, kernel=self.config.kernel_type)
         else:
             likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=self.num_tasks)
-            model = MultitaskExactGPLayer(dataset=self.dataset, config=self.config, train_x=train_x, train_y=train_y,
+            model = MultitaskExactGPLayer(config=self.config, train_x=train_x, train_y=train_y,
                                           likelihood=likelihood,
                                           kernel=self.config.kernel_type, num_tasks=self.num_tasks,
                                           multi_type=self.multi_type)
@@ -112,6 +120,7 @@ class NGGP(nn.Module):
 
     # trouble area
     def _train_loop(self, epoch, optimizer, params, results_logger):
+
         # put the model, feature extractor and likelihood into "training mode"
         self.model.train()
         self.feature_extractor.train()
@@ -119,87 +128,26 @@ class NGGP(nn.Module):
         if self.is_flow:
             self.cnf.train()
 
-        # end product: zip of batch and batch_labels
-        # generates more data for the sines dataset
-        if self.dataset == "sines":
-            batch, batch_labels, amp, phase = SinusoidalDataGenerator(params.update_batch_size * 2,
-                                                                      params.meta_batch_size,
-                                                                      params.num_tasks,
-                                                                      params.multidimensional_amp,
-                                                                      params.multidimensional_phase,
-                                                                      params.noise,
-                                                                      params.out_of_range).generate()
-
-            if self.num_tasks == 1:
-                batch = torch.from_numpy(batch)
-                batch_labels = torch.from_numpy(batch_labels).view(batch_labels.shape[0], -1)
-            else:
-                batch = torch.from_numpy(batch)
-                batch_labels = torch.from_numpy(batch_labels)
-
-            dataloader = zip(batch, batch_labels)
-            
-
-        # uses some custom genrator
-        elif self.dataset == "nasdaq" or self.dataset == "eeg":
-            nasdaq100padding = Nasdaq100padding(directory=self.config.data_dir[self.dataset], normalize=True,
-                                                partition="train", window=params.update_batch_size * 2,
-                                                time_to_predict=params.meta_batch_size * 2)
-            dataloader = torch.utils.data.DataLoader(nasdaq100padding, batch_size=params.update_batch_size * 2,
-                                                     shuffle=True)
-            batch, batch_labels = next(iter(dataloader))
-            batch = batch.reshape(params.update_batch_size * 2, params.meta_batch_size * 2, 1)
-            batch_labels = batch_labels[:, :, -1].float()
-            dataloader=zip(batch, batch_labels)
-
-        # uses some custom get batch function, probably closest to what I would need
-        elif self.dataset == "QMUL":
-            batch, batch_labels = get_batch(train_people, data_dir=self.config.data_dir['qmul'])
-            dataloader = zip(batch, batch_labels)
-        elif self.dataset == "objects":
-            batch, batch_labels = get_objects_batch(self.x_objects_train,
-                                                    self.y_objects_train,
-                                                    params.meta_batch_size,
-                                                    params.update_batch_size,
-                                                    params.num_tasks)
-            batch = torch.reshape(batch, (batch.shape[0], batch.shape[1], 1, 128, 128))
-            dataloader = zip(batch, batch_labels)
-
-        # need to generate dataloader for my dataset
-            
-
-        elif self.dataset == "neural":
-            all_batches = []
-            all_batch_labels = []
-            while True:  # or some condition to end the loop
-                batch, batch_labels = self.neural_loader.get_batch()
-                if batch is None or batch_labels is None:
-                    print('.')
-                    break  # Exit loop if there's no more data
-
-
-                
-                all_batches.append(batch)
-                all_batch_labels.append(batch_labels)
-
-            # Now, all_batches and all_batch_labels are lists of tensors, each representing a batch
-            # Example: iterate through each batch
-            dataloader = zip(all_batches,all_batch_labels)
-
-
-        else:
-            raise ValueError("Unknown dataset {}".format(self.dataset))
-        
-        
+        dataset = TensorDataset(self.train_x, self.train_y)
+        #dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        dataloader = DataLoader(dataset, batch_size=len(self.train_x), shuffle=True)
 
         # iterate through each input label pair in batch and performance SGD
         # I don't think I need to do anything here
-        for _, (inputs, labels) in enumerate(dataloader):
+        total_batches = len(dataloader)  # Get the total number of batches
+
+        for batch_index, (inputs, labels) in enumerate(dataloader):
+            #if batch_index == total_batches - 1:  # Check if it's the last batch
+             #   break  # Skip the last batch
+    
+        # Process your inputs and labels here
+
             inputs, labels = inputs.to(self.device), labels.to(self.device)
             optimizer.zero_grad()
 
            # break
-            z = self.feature_extractor(inputs)
+            #z = self.feature_extractor(inputs)
+            z = inputs
             if self.add_noise:
                 labels = labels + torch.normal(0, 0.1, size=labels.shape).to(labels)
             if self.is_flow:                
@@ -506,35 +454,16 @@ class NGGP(nn.Module):
         return avg_loss, avg_mse
 
 class ExactGPLayer(gpytorch.models.ExactGP):
-    def __init__(self, dataset, config, train_x, train_y, likelihood, kernel='linear'):
+    def __init__(self, config, train_x, train_y, likelihood, kernel='linear'):
         super(ExactGPLayer, self).__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
-        self.dataset = dataset
         ## RBF kernel
         if kernel == 'rbf' or kernel == 'RBF':
             self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
         ## Spectral kernel
-        elif kernel == 'spectral':
-            if self.dataset == "sines":
-                ard_num_dims = 40 #1
-            elif self.dataset == "nasdaq" or self.dataset == "eeg":
-                ard_num_dims = 1
-            elif self.dataset == 'objects':
-                ard_num_dims = 64
-            else:
-                ard_num_dims = 2916
-            self.covar_module = gpytorch.kernels.SpectralMixtureKernel(num_mixtures=4, ard_num_dims=ard_num_dims)
-        elif kernel == "nn":
-
-            self.kernel = NNKernel(input_dim=config.nn_config["input_dim"],
-                                   output_dim=config.nn_config["output_dim"],
-                                   num_layers=config.nn_config["num_layers"],
-                                   hidden_dim=config.nn_config["hidden_dim"])
-
-            self.covar_module = self.kernel
         else:
             raise ValueError(
-                "[ERROR] the kernel '" + str(kernel) + "' is not supported for regression, use 'rbf' or 'spectral'.")
+                "[ERROR] the kernel '" + str(kernel) + "' Must be RBG for ANGGP'.")
 
     def forward(self, x):
         mean_x = self.mean_module(x)
@@ -543,38 +472,19 @@ class ExactGPLayer(gpytorch.models.ExactGP):
 
 
 class MultitaskExactGPLayer(gpytorch.models.ExactGP):
-    def __init__(self, dataset, config, train_x, train_y, likelihood, kernel='nn', num_tasks=2, multi_type=2):
+    def __init__(self, config, train_x, train_y, likelihood, kernel='nn', num_tasks=2, multi_type=2):
         super(MultitaskExactGPLayer, self).__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.MultitaskMean(
             gpytorch.means.ConstantMean(), num_tasks=num_tasks
         )
-        self.dataset = dataset
-        if kernel == "nn":
-            if multi_type == 2:
-                self.kernels = NNKernel(input_dim=config.nn_config["input_dim"],
-                                        output_dim=config.nn_config["output_dim"],
-                                        num_layers=config.nn_config["num_layers"],
-                                        hidden_dim=config.nn_config["hidden_dim"])
 
-                self.covar_module = gpytorch.kernels.MultitaskKernel(self.kernels, num_tasks)
-            elif multi_type == 3:
-                self.kernels = []
-                for i in range(num_tasks):
-                    self.kernels.append(NNKernel(input_dim=config.nn_config["input_dim"],
-                                                 output_dim=config.nn_config["output_dim"],
-                                                 num_layers=config.nn_config["num_layers"],
-                                                 hidden_dim=config.nn_config["hidden_dim"]))
-                self.covar_module = MultiNNKernel(num_tasks, self.kernels)
-            else:
-                raise ValueError("Unsupported multi kernel type {}".format(multi_type))
-        elif kernel == "rbf":
-
+        if kernel == "rbf":
             self.covar_module = gpytorch.kernels.MultitaskKernel(
                 gpytorch.kernels.RBFKernel(), num_tasks=2, rank=1
             )
         else:
             raise ValueError(
-                "[ERROR] the kernel '" + str(kernel) + "' is not supported for multi-regression, use 'nn'.")
+                "[ERROR] the kernel '" + str(kernel) + "' is not supported for ANGGP.")
 
     def forward(self, x):
         mean_x = self.mean_module(x)
