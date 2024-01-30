@@ -127,17 +127,17 @@ class ANGGP(nn.Module):
         self.likelihood.train()
         if self.is_flow:
             self.cnf.train()
-
         dataset = TensorDataset(self.train_x, self.train_y)
         #dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
-        dataloader = DataLoader(dataset, batch_size=len(self.train_x), shuffle=True)
-
+        dataloader = DataLoader(dataset, batch_size=len(self.train_x), shuffle=False)
+        #dataset = TensorDataset(self.train_x, self.train_y)
+        #batch_size = min(1, len(self.train_x))  # Adjust batch size as needed
+        #dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
         # iterate through each input label pair in batch and performance SGD
         # I don't think I need to do anything here
         total_batches = len(dataloader)  # Get the total number of batches
 
         for batch_index, (inputs, labels) in enumerate(dataloader):
-            print(np.shape(inputs),np.shape(labels))
             #if batch_index == total_batches - 1:  # Check if it's the last batch
              #   break  # Skip the last batch
     
@@ -155,16 +155,17 @@ class ANGGP(nn.Module):
                 delta_log_py, labels, y = self.apply_flow(labels, z)
             else:
                 y = labels
+
             self.model.set_train_data(inputs=z, targets=y)
             predictions = self.model(z)
-            print(predictions.mean.unsqueeze(1))
+
             loss = -self.mll(predictions, self.model.train_targets)
             if self.is_flow:
                 loss = loss + torch.mean(delta_log_py)
             loss.backward()
             optimizer.step()
 
-            mse, _ = self.compute_mse(labels, predictions, z)
+            mse, new_means = self.compute_mse(labels, predictions, z)
             if epoch % 10 == 0:
                 print('[%d] - Loss: %.3f  MSE: %.3f noise: %.3f' % (
                     epoch, loss.item(), mse.item(),

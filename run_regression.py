@@ -42,6 +42,7 @@ def train(model, optimizer, params, save_path, results_logger):
     for epoch in range(params.stop_epoch):
         model.train_loop(epoch, optimizer, params, results_logger)
     model.save_checkpoint(save_path)
+    return model
 
 
 def test(model, params, save_path, results_logger):
