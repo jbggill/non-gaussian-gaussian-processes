@@ -137,6 +137,7 @@ class ANGGP(nn.Module):
         total_batches = len(dataloader)  # Get the total number of batches
 
         for batch_index, (inputs, labels) in enumerate(dataloader):
+            print(np.shape(inputs),np.shape(labels))
             #if batch_index == total_batches - 1:  # Check if it's the last batch
              #   break  # Skip the last batch
     
@@ -156,6 +157,7 @@ class ANGGP(nn.Module):
                 y = labels
             self.model.set_train_data(inputs=z, targets=y)
             predictions = self.model(z)
+            print(predictions.mean.unsqueeze(1))
             loss = -self.mll(predictions, self.model.train_targets)
             if self.is_flow:
                 loss = loss + torch.mean(delta_log_py)
