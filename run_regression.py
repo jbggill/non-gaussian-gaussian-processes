@@ -16,7 +16,6 @@ from training.utils import set_cnf_options
 
 def main():
     params = parse_args_regression()
-    print(params)
     setup_seed(params)
     config = Config(params)
     checkpoint_dir, save_path = setup_checkpoint_dir(params)
@@ -29,7 +28,6 @@ def main():
     bb = setup_backbone(device, params)
     model = setup_model(bb, config, device, params)
     optimizer = setup_optimizer(model, params)
-    print(params.test)
     if params.test:
         test(model, params, save_path, results_logger)
     else:
@@ -47,16 +45,15 @@ def train(model, optimizer, params, save_path, results_logger):
 
 def test(model, params, save_path, results_logger):
     model.load_checkpoint(save_path, device=params.device)
-
-    
-
     for epoch in range(params.n_test_epochs):
+        print('going into' , type(model), 'test loop')
         res = model.test_loop(params.n_support, params, os.path.dirname(save_path))
+
         detached_res = []
         for r in res:
             detached = r.cpu().detach().numpy()
             detached_res.append(detached)
-
+    
         names = ["mse_list", "nll_list", "mean", "lower", "upper", "x", "y"]
         for i, r in enumerate(detached_res):
             results_logger.log(names[i], r)
@@ -88,7 +85,6 @@ def setup_checkpoint_dir(params):
     checkpoint_dir = '%s/checkpoints/%s/' % (params.save_dir, params.dataset)
     os.makedirs(checkpoint_dir, exist_ok=True)
     save_path = '%s/checkpoints/%s/%s_%s_model.th' % (params.save_dir, params.dataset, params.model, params.method)
-    print(save_path)
     return checkpoint_dir, save_path
 
 

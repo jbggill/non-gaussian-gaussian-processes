@@ -331,7 +331,7 @@ class NGGP(nn.Module):
 
     # the testing part. This is made for meta-learning so it would have to be adapted
     def test_loop(self, n_support, params=None, save_dir=None):
-
+        print('test loop reached')
         # each creates a support and query dataset for 0
         if self.dataset == "sines":
             x_all, x_support, y_all, y_support = self.get_support_query_sines(n_support, params)
@@ -347,7 +347,6 @@ class NGGP(nn.Module):
             x_test, y_test = x_all, y_all
         else:
             raise ValueError("Unknown dataset")
-
         sample_fn, _ = get_transforms(self.cnf, self.use_conditional)
         # choose a random test person
         n = np.random.randint(0, x_support.shape[0])
@@ -359,7 +358,6 @@ class NGGP(nn.Module):
                 _, labels, y_support = self.apply_flow(labels, z_support)
         else:
             y_support = labels
-
         self.model.set_train_data(inputs=z_support, targets=y_support, strict=False)
 
         self.model.eval()

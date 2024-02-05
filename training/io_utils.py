@@ -122,7 +122,7 @@ def parse_args_regression():
     parser.add_argument('--out_of_range', action="store_true", help="Whether to perform test also on out of range "
                                                                     "samples. WARNING: FOR NOW IMPLEMENTED ONLY FOR "
                                                                     "SINES")
-    parser.add_argument('--device', choices=['cpu','cuda'], default='cuda', help="Which device to use. Small datasets like sines may work faster on cpu than gpu.")
+    parser.add_argument('--device', choices=['cpu','cuda'], default='cpu', help="Which device to use. Small datasets like sines may work faster on cpu than gpu.")
     return parser.parse_args()
 
 

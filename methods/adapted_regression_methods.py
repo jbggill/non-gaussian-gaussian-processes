@@ -76,13 +76,18 @@ class ANGGP(nn.Module):
         self.batch_size = batch_size
         self.train_x = None
         self.train_y = None
+        self.test_x = None
+        self.test_y = None
     
     def set_training_data(self, train_x, train_y):
         self.train_x = train_x.to(self.device)
         self.train_y = train_y.to(self.device)
         self.get_model_likelihood_mll(train_x=self.train_x, train_y=self.train_y)
         print('Training data set')
-
+    def set_test_data(self,test_x, test_y):
+        self.test_x=test_x.to(self.device)
+        self.test_y=test_y.to(self.device)
+        print('Test Data Set')
     def get_model_likelihood_mll(self, train_x=None, train_y=None):
         if train_x is None or train_y is None:
             raise ValueError("Training data must be provided")
@@ -129,7 +134,7 @@ class ANGGP(nn.Module):
             self.cnf.train()
         dataset = TensorDataset(self.train_x, self.train_y)
         #dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
-        dataloader = DataLoader(dataset, batch_size=len(self.train_x), shuffle=False)
+        dataloader = DataLoader(dataset, batch_size=len(self.train_x), shuffle=True)
         #dataset = TensorDataset(self.train_x, self.train_y)
         #batch_size = min(1, len(self.train_x))  # Adjust batch size as needed
         #dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -216,6 +221,7 @@ class ANGGP(nn.Module):
         return context
 
     def apply_flow(self, labels, z):
+        
         if self.num_tasks == 1:
             labels = labels.unsqueeze(1)
         if self.use_conditional:
@@ -227,156 +233,56 @@ class ANGGP(nn.Module):
         return delta_log_py, labels, y
 
 
-    # the testing part. This is made for meta-learning so it would have to be adapted
-    def test_loop(self, n_support, params=None, save_dir=None):
-
-        # each creates a support and query dataset for 0
-        if self.dataset == "sines":
-            x_all, x_support, y_all, y_support = self.get_support_query_sines(n_support, params)
-            x_test, y_test = x_all, y_all
-        elif self.dataset == "nasdaq" or self.dataset == "eeg":
-            x_all, x_support, y_all, y_support = self.get_support_query_nasdaq(n_support, params)
-            x_test, y_test = x_all, y_all
-        elif self.dataset == "objects":
-            x_all, x_support, x_query, y_all, y_support, y_query = self.get_support_query_objects(n_support, params)
-            x_test, y_test = x_query, y_query
-        elif self.dataset == "QMUL":
-            x_all, x_support, y_all, y_support = self.get_support_query_qmul(n_support)
-            x_test, y_test = x_all, y_all
-        else:
-            raise ValueError("Unknown dataset")
-
+    def test_loop(self, params=None, save_dir=None):
         sample_fn, _ = get_transforms(self.cnf, self.use_conditional)
-        # choose a random test person
-        n = np.random.randint(0, x_support.shape[0])
-        z_support = self.feature_extractor(x_support[n]).detach()
-        labels = y_support[n]
+        inputs, labels = self.test_x.float(), self.test_y.float()
 
-        if self.is_flow:
-            with torch.no_grad():
-                _, labels, y_support = self.apply_flow(labels, z_support)
-        else:
-            y_support = labels
-
-        self.model.set_train_data(inputs=z_support, targets=y_support, strict=False)
-
+        # Ensure models are in evaluation mode and data types are consistent
         self.model.eval()
         self.feature_extractor.eval()
         self.likelihood.eval()
         if self.is_flow:
             self.cnf.eval()
 
+        total_mse = 0
+        total_nll = 0
+        count = 0
+        context = None
         with torch.no_grad():
-            z_query = self.feature_extractor(x_test[n]).detach()
-            predictions_query = self.model(z_query)
+            
+            z = inputs#.T
+            print(np.shape(z))
+            predictions_query = self.model(z)
             pred = self.likelihood(predictions_query)
-            context = None
-            new_means = None
+
             if self.is_flow:
-                if self.num_tasks == 1:
-                    mean_base = pred.mean.unsqueeze(1)
-                else:
-                    mean_base = pred.mean
+                mean_base = pred.mean
                 if self.use_conditional:
-                    context = self.get_context(z_query)
+                    context = self.get_context(z)
                     new_means = sample_fn(mean_base, context)
                 else:
-                    new_means = sample_fn(mean_base)
-                delta_log_py, _, y = self.apply_flow(y_test[n], z_query)
-                log_py = -self.mll(predictions_query, y.squeeze())
+                    new_means = sample_fn(mean_base.unsqueeze(-1).float())
+                delta_log_py, _, y_temp = self.apply_flow(labels,z)
+                log_py = -self.mll(predictions_query, labels.squeeze())
                 NLL = log_py + torch.mean(delta_log_py.squeeze())
-                # log_py = normal_logprob(y.squeeze(), pred.mean, pred.stddev)
-                # NLL = -1.0 * torch.mean(log_py - delta_log_py.squeeze())
             else:
-                NLL = -self.mll(predictions_query, y_test[n])
-                #log_py = normal_logprob(y_all[n], pred.mean, pred.stddev)
-                #NLL = -1.0 * torch.mean(log_py)
-            if self.i_plots<self.max_test_plots and save_dir is not None and self.num_tasks == 1:
-                samples, true_y, gauss_y, flow_samples, flow_y = prepare_for_plots(pred, y_test[n],
-                                                                                    sample_fn, context, new_means)
-                plot_histograms(save_dir, samples, true_y, gauss_y, n, flow_samples, flow_y, self.i_plots)
-                self.i_plots=self.i_plots+1
-                samples_dict = {"gauss_samples": samples, "gauss_y":gauss_y, "flow_samples":flow_samples,
-                                "flow_y":flow_y, "true_y":true_y,"true_x":x_test[n]}
-                np.save(os.path.join(save_dir,"plot_samples_{}.npy".format(self.i_plots)),samples_dict)
+                NLL = -self.mll(predictions_query, labels)
 
-                
-            mse, new_means = self.compute_mse(y_test[n], pred, z_query)
-            lower, upper = pred.confidence_region()  # 2 standard deviations above and below the mean
+            mse = self.mse(predictions_query.mean, labels.squeeze())
 
-        if self.is_flow:
-            return mse, NLL, new_means, lower, upper, x_test[n], y_test[n]
-        else:
-            return mse, NLL, pred.mean, lower, upper, x_test[n], y_test[n]
-
-    def get_support_query_objects(self, n_support, params):
-        inputs, targets = get_objects_batch(self.x_objects_train,
-                                            self.y_objects_train,
-                                            params.meta_batch_size,
-                                            params.update_batch_size,
-                                            params.num_tasks)
-        inputs = torch.reshape(inputs, (inputs.shape[0], inputs.shape[1], 1, 128, 128))
-        support_ind = list(np.random.choice(list(range(30)), replace=False, size=n_support))
-        query_ind = [i for i in range(30) if i not in support_ind]
-        x_all = inputs.to(self.device)
-        y_all = targets.to(self.device)
-        x_support = inputs[:, support_ind, :, :, :].to(self.device)
-        y_support = targets[:, support_ind].to(self.device)
-        x_query = inputs[:, query_ind, :, :, :].to(self.device)
-        y_query = targets[:, query_ind].to(self.device)
-        return x_all, x_support, x_query, y_all, y_support, y_query
-
-    def get_support_query_qmul(self, n_support):
-        inputs, targets = get_batch(test_people, data_dir=self.config.data_dir["qmul"])
-        support_ind = list(np.random.choice(list(range(19)), replace=False, size=n_support))
-        query_ind = [i for i in range(19) if i not in support_ind]
-        x_all = inputs.to(self.device)
-        y_all = targets.to(self.device)
-        x_support = inputs[:, support_ind, :, :, :].to(self.device)
-        y_support = targets[:, support_ind].to(self.device)
-        x_query = inputs[:, query_ind, :, :, :].to(self.device)
-        y_query = targets[:, query_ind].to(self.device)
-        return x_all, x_support, y_all, y_support
-
-    def get_support_query_sines(self, n_support, params):
-        batch, batch_labels, amp, phase = SinusoidalDataGenerator(200, params.meta_batch_size, params.num_tasks,
-                                                                  params.multidimensional_amp,
-                                                                  params.multidimensional_phase, params.noise,
-                                                                  params.out_of_range).generate()
-        if self.num_tasks == 1:
-            inputs = torch.from_numpy(batch)
-            targets = torch.from_numpy(batch_labels).view(batch_labels.shape[0], -1)
-        else:
-            inputs = torch.from_numpy(batch)
-            targets = torch.from_numpy(batch_labels)
-
-        support_ind = list(np.random.choice(list(range(200)), replace=False, size=n_support))
-        query_ind = [i for i in range(200) if i not in support_ind]
-
-        x_all = inputs.to(self.device)
-        y_all = targets.to(self.device)
-        x_support = inputs[:, support_ind, :].to(self.device)
-        y_support = targets[:, support_ind].to(self.device)
-        return x_all, x_support, y_all, y_support
+            total_mse += mse.item()
+            total_nll += NLL.item()
+  
+        #print(len(inputs))
+        avg_mse = total_mse / len(inputs)
+        avg_nll = total_nll / len(inputs)
+        samples, true_y, gauss_y, flow_samples, flow_y = prepare_for_plots(pred, labels,
+                                                                    sample_fn, context, new_means)
+        # No need to return individual predictions for traditional testing, just the aggregate metrics
+        return avg_mse, avg_nll
 
 
-    def get_support_query_nasdaq(self, n_support, params):
-        nasdaq100padding = Nasdaq100padding(directory=self.config.data_dir['nasdaq'], normalize=True, partition="train",
-                                            window=params.update_batch_size * 2,
-                                            time_to_predict=params.meta_batch_size * 2)
-        data_loader = torch.utils.data.DataLoader(nasdaq100padding, batch_size=params.update_batch_size * 2,
-                                                  shuffle=True)
-        batch, batch_labels = next(iter(data_loader))
-        inputs = batch.reshape(params.update_batch_size * 2, params.meta_batch_size * 2, 1)
-        targets = batch_labels[:, :, -1].float()
 
-        support_ind = list(np.random.choice(list(range(10)), replace=True, size=n_support))
-        query_ind = [i for i in range(10) if i not in support_ind]
-        x_all = inputs.to(self.device)
-        y_all = targets.to(self.device)
-        x_support = inputs[:, support_ind, :].to(self.device)
-        y_support = targets[:, support_ind].to(self.device)
-        return x_all, x_support, y_all, y_support
 
     def save_checkpoint(self, checkpoint):
         # save state
@@ -463,6 +369,8 @@ class ExactGPLayer(gpytorch.models.ExactGP):
         ## RBF kernel
         if kernel == 'rbf' or kernel == 'RBF':
             self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+            #self.covar_module.base_kernel.lengthscale = 0.0001
+            #self.covar_module.base_kernel.varaince = 0.001
         ## Spectral kernel
         else:
             raise ValueError(
